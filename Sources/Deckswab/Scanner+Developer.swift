@@ -188,7 +188,7 @@ extension Scanner {
 
         return children(of: localDir.appending(path: "run")).compactMap { siteDir in
             let id = siteDir.lastPathComponent
-            let isRunning = running.contains(id)
+            let isRunning = nil != running[id]
             // A running server keeps writing to its newest log, so only older ones can go.
             let files = binlogFiles(in: siteDir)
             let size = (isRunning ? files.dropLast() : files[...]).reduce(0) { $0 + allocatedSize($1) }
@@ -206,8 +206,8 @@ extension Scanner {
 
     static func cleanBinlogs(siteDir: URL) throws {
         // Re-check: the site may have been started or stopped since the scan.
-        if runningLocalSites().contains(siteDir.lastPathComponent) {
-            try purgeBinlogs(socket: siteDir.appending(path: "mysql/mysqld.sock"))
+        if let server = runningLocalSites()[siteDir.lastPathComponent] {
+            try purgeBinlogs(socket: siteDir.appending(path: "mysql/mysqld.sock"), server: server)
             return
         }
         let index = siteDir.appending(path: "mysql/data/binlog.index")
@@ -222,15 +222,18 @@ extension Scanner {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// IDs of Local sites whose mysqld is currently running.
-    private static func runningLocalSites() -> Set<String> {
+    /// Local sites whose mysqld is running, by site ID, with the path of that mysqld.
+    private static func runningLocalSites() -> [String: URL] {
         let output = (try? run("/bin/ps", ["-axo", "command"])) ?? ""
-        var ids = Set<String>()
+        var sites: [String: URL] = [:]
         for line in output.split(separator: "\n") where line.contains("mysqld") {
-            guard let range = line.range(of: "Local/run/") else { continue }
-            ids.insert(String(line[range.upperBound...].prefix { "/" != $0 }))
+            guard let range = line.range(of: "Local/run/"),
+                  let server = line.range(of: "/bin/mysqld")
+            else { continue }
+            let id = String(line[range.upperBound...].prefix { "/" != $0 })
+            sites[id] = URL(fileURLWithPath: String(line[..<server.upperBound]))
         }
-        return ids
+        return sites
     }
 
     private static func localSiteNames() -> [String: String] {
@@ -241,13 +244,32 @@ extension Scanner {
         return sites.compactMapValues { $0["name"] as? String }
     }
 
-    private static func purgeBinlogs(socket: URL) throws {
-        let client = children(of: localDir.appending(path: "lightning-services"))
+    /// Purges through Local's mysql client. The one beside the site's own server comes first: it
+    /// matches the server's version and is known to run on this Mac. Local also ships Intel-only
+    /// builds, which can't run on Apple silicon without Rosetta, so any client that fails to start
+    /// is skipped for the next.
+    private static func purgeBinlogs(socket: URL, server: URL) throws {
+        var clients = [server.deletingLastPathComponent().appending(path: "mysql")]
+        let services = children(of: localDir.appending(path: "lightning-services"))
             .filter { $0.lastPathComponent.hasPrefix("mysql-") }
-            .flatMap { service in ["darwin-arm64", "darwin"].map { service.appending(path: "bin/\($0)/bin/mysql") } }
-            .first { fm.isExecutableFile(atPath: $0.path) }
-        guard let client else { throw CleanError(message: "MySQL client not found in Local's lightning-services") }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }
+        clients += services.flatMap { service in
+            ["darwin-arm64", "darwin"].map { service.appending(path: "bin/\($0)/bin/mysql") }
+        }
 
-        try run(client.path, ["-uroot", "-proot", "-S", socket.path, "-e", "PURGE BINARY LOGS BEFORE NOW();"])
+        var lastError: Error = CleanError(message: "MySQL client not found in Local's lightning-services")
+        for client in clients where fm.isExecutableFile(atPath: client.path) {
+            do {
+                try run(client.path, ["-uroot", "-proot", "-S", socket.path, "-e", "PURGE BINARY LOGS BEFORE NOW();"])
+                return
+            } catch let error as CleanError {
+                // The client ran and MySQL refused: another client won't do better.
+                throw error
+            } catch {
+                // It couldn't start at all, such as an Intel build on Apple silicon. Try the next.
+                lastError = error
+            }
+        }
+        throw lastError
     }
 }
