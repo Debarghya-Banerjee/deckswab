@@ -42,7 +42,7 @@ A macOS menu bar app that keeps your disk from filling up. It shows free space i
 
 ## Install
 
-1. Download **Deckswab-2.0.dmg** from the [latest release](https://github.com/Debarghya-Banerjee/deckswab/releases/latest).
+1. Download **Deckswab-2.0.1.dmg** from the [latest release](https://github.com/Debarghya-Banerjee/deckswab/releases/latest).
 2. Open it and drag Deckswab onto the Applications folder.
 3. Open Deckswab from Applications.
 
