@@ -40,6 +40,22 @@ A macOS menu bar app that keeps your disk from filling up. It shows free space i
 - **Large files** in your home folder.
 - **iPhone and iPad backups.** Needs Full Disk Access.
 
+## Install
+
+1. Download **Deckswab-2.0.dmg** from the [latest release](https://github.com/Debarghya-Banerjee/deckswab/releases/latest).
+2. Open it and drag Deckswab onto the Applications folder.
+3. Open Deckswab from Applications.
+
+Deckswab isn't notarised by Apple, so the first time you open it macOS says it can't verify the developer. Go to **System Settings › Privacy & Security**, scroll down, and click **Open Anyway** next to Deckswab. You only need to do this once.
+
+If you're comfortable with Terminal, this removes the warning instead:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Deckswab.app
+```
+
+Deckswab needs macOS 15 or later and runs natively on Apple silicon and Intel Macs.
+
 ## Build
 
 Requires macOS 15+ and the Swift toolchain. The Xcode Command Line Tools are enough.
@@ -47,7 +63,10 @@ Requires macOS 15+ and the Swift toolchain. The Xcode Command Line Tools are eno
 ```sh
 ./build.sh            # builds build/Deckswab.app
 ./build.sh --install  # also copies it to ~/Applications and launches it
+scripts/make-dmg.sh   # packages build/Deckswab-<version>.dmg for release
 ```
+
+An app you build yourself opens without the warning above.
 
 Turn on **Open at login** in Settings so it keeps watching. To see the Trash and device backups, give Deckswab Full Disk Access in System Settings › Privacy & Security.
 

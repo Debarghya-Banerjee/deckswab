@@ -3,7 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
+# Universal, so it runs on Apple silicon and Intel Macs.
+swift build -c release --arch arm64 --arch x86_64
 
 APP=build/Deckswab.app
 rm -rf "$APP"
